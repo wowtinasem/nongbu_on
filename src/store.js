@@ -388,7 +388,8 @@ const useStore = create((set, get) => ({
 
       // 1. Decode narration audio
       const audioBlob = await (await fetch(audioUrl)).blob()
-      const audioCtx = new AudioContext()
+      const AudioCtx = window.AudioContext || window.webkitAudioContext
+      const audioCtx = new AudioCtx()
       const audioBuffer = await audioCtx.decodeAudioData(await audioBlob.arrayBuffer())
       const totalDur = audioBuffer.duration
       console.log('[영상] 오디오 길이:', totalDur.toFixed(1), '초')
@@ -633,10 +634,24 @@ const useStore = create((set, get) => ({
           boxY = canvas.height - 280 - totalHeight
         }
 
-        // Draw background box
+        // Draw background box (roundRect polyfill for mobile compatibility)
         ctx.fillStyle = subStyle.bg
         ctx.beginPath()
-        ctx.roundRect(boxX, boxY, boxWidth, totalHeight, 16)
+        if (ctx.roundRect) {
+          ctx.roundRect(boxX, boxY, boxWidth, totalHeight, 16)
+        } else {
+          const r = 16
+          ctx.moveTo(boxX + r, boxY)
+          ctx.lineTo(boxX + boxWidth - r, boxY)
+          ctx.arcTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + r, r)
+          ctx.lineTo(boxX + boxWidth, boxY + totalHeight - r)
+          ctx.arcTo(boxX + boxWidth, boxY + totalHeight, boxX + boxWidth - r, boxY + totalHeight, r)
+          ctx.lineTo(boxX + r, boxY + totalHeight)
+          ctx.arcTo(boxX, boxY + totalHeight, boxX, boxY + totalHeight - r, r)
+          ctx.lineTo(boxX, boxY + r)
+          ctx.arcTo(boxX, boxY, boxX + r, boxY, r)
+          ctx.closePath()
+        }
         ctx.fill()
 
         // Draw text with explicit color
@@ -685,8 +700,10 @@ const useStore = create((set, get) => ({
       }
 
       // 7. Recorder setup
+      const captureStream = canvas.captureStream || canvas.mozCaptureStream
+      if (!captureStream) throw new Error('이 브라우저에서는 영상 녹화가 지원되지 않습니다. Chrome 또는 Safari를 사용해주세요.')
       const stream = new MediaStream([
-        ...canvas.captureStream(30).getVideoTracks(),
+        ...captureStream.call(canvas, 30).getVideoTracks(),
         ...audioDest.stream.getAudioTracks(),
       ])
       // Try MP4 first (Chrome 130+), then fallback to WebM
@@ -821,7 +838,7 @@ const useStore = create((set, get) => ({
       console.log('[영상] 영상 생성 완료')
     } catch (err) {
       console.error('[영상] 생성 실패:', err)
-      alert(`영상 생성에 실패했습니다.\n${err.message}`)
+      alert(`영상 생성에 실패했습니다.\n${err?.message || String(err)}`)
     } finally {
       set({ isGeneratingVideo: false })
     }
