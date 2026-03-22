@@ -3,3 +3,5 @@ dist
 uploads
 output
 .env
+
+.vercel
