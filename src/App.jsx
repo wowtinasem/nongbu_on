@@ -39,7 +39,8 @@ export default function App() {
           </main>
         </>
       )}
-      <footer className="text-center text-sm text-gray-400 py-4 mt-auto">
+      <footer className="text-center text-sm text-gray-400 py-4 mt-auto space-y-1">
+        <p>이 앱은 괴산군 정보화 농부님들을 위해 제작되었습니다.</p>
         <p>&copy; 2026 농부ON. 농부를 위한 숏폼 영상 제작 서비스</p>
       </footer>
       <a
