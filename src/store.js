@@ -412,21 +412,50 @@ const useStore = create((set, get) => ({
       }
 
       // 2. Preload ALL media in upload order (no reordering)
+      //    On mobile, blob URLs can expire — re-create them from files as fallback
       const loaded = []
-      for (const item of photos) {
+      for (let mi = 0; mi < photos.length; mi++) {
+        const item = photos[mi]
         if (item.type === 'video') {
           const el = document.createElement('video')
-          el.src = item.preview
           el.muted = true
           el.playsInline = true
           el.preload = 'auto'
-          await new Promise((ok, fail) => { el.onloadeddata = ok; el.onerror = fail })
+          el.setAttribute('playsinline', '')
+          el.setAttribute('webkit-playsinline', '')
+          // Try blob URL first, then re-create from file
+          let videoLoaded = false
+          for (const src of [item.preview, URL.createObjectURL(item.file)]) {
+            try {
+              el.src = src
+              await new Promise((ok, fail) => {
+                el.onloadeddata = ok
+                el.onerror = () => fail(new Error(`동영상 ${mi + 1}번 로딩 실패`))
+                setTimeout(() => fail(new Error(`동영상 ${mi + 1}번 로딩 시간 초과`)), 10000)
+              })
+              videoLoaded = true
+              break
+            } catch { /* try next src */ }
+          }
+          if (!videoLoaded) throw new Error(`동영상 ${mi + 1}번을 불러올 수 없습니다`)
           const mediaDur = item.trimDuration > 0 ? item.trimDuration : el.duration
           loaded.push({ type: 'video', element: el, mediaDur })
         } else {
           const img = new Image()
-          img.src = item.preview
-          await new Promise((ok, fail) => { img.onload = ok; img.onerror = fail })
+          let imgLoaded = false
+          for (const src of [item.preview, URL.createObjectURL(item.file)]) {
+            try {
+              img.src = src
+              await new Promise((ok, fail) => {
+                img.onload = ok
+                img.onerror = () => fail(new Error(`사진 ${mi + 1}번 로딩 실패`))
+                setTimeout(() => fail(new Error(`사진 ${mi + 1}번 로딩 시간 초과`)), 10000)
+              })
+              imgLoaded = true
+              break
+            } catch { /* try next src */ }
+          }
+          if (!imgLoaded) throw new Error(`사진 ${mi + 1}번을 불러올 수 없습니다`)
           loaded.push({ type: 'image', element: img, mediaDur: 0 })
         }
       }
