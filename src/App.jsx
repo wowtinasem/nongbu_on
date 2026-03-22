@@ -22,21 +22,24 @@ export default function App() {
   const showProfileSetup = useStore((s) => s.showProfileSetup)
   const StepComponent = STEPS[step].component
 
-  // Show setup if no profile saved OR user clicked settings
-  if (!farmProfile || showProfileSetup) {
-    return <FarmProfileSetup />
-  }
+  const isSetup = !farmProfile || showProfileSetup
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
-      <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6">
-        <Stepper steps={STEPS} current={step} />
-        <div className="mt-8">
-          <StepComponent />
-        </div>
-      </main>
-      <footer className="text-center text-sm text-gray-400 py-4">
+      {isSetup ? (
+        <FarmProfileSetup />
+      ) : (
+        <>
+          <Header />
+          <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6">
+            <Stepper steps={STEPS} current={step} />
+            <div className="mt-8">
+              <StepComponent />
+            </div>
+          </main>
+        </>
+      )}
+      <footer className="text-center text-sm text-gray-400 py-4 mt-auto">
         <p>&copy; 2026 농부ON. 농부를 위한 숏폼 영상 제작 서비스</p>
       </footer>
       <a
