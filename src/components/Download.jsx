@@ -574,16 +574,6 @@ export default function Download() {
             <FiDownload /> {ext.toUpperCase()} 다운로드
           </button>
 
-          <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <FiUpload className="text-red-500" />
-              <span className="text-sm font-bold text-red-600">YouTube Shorts 업로드</span>
-            </div>
-            <p className="text-xs text-gray-600 leading-relaxed">
-              다운로드한 영상을 YouTube Shorts에 바로 업로드하세요!
-              세로 비율(9:16)으로 제작되어 Shorts에 최적화되어 있습니다.
-            </p>
-          </div>
         </div>
       )}
 
