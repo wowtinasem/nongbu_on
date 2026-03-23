@@ -24,6 +24,71 @@ function getVideoDuration(file) {
   })
 }
 
+// Generate small JPEG thumbnail data URL (reliable on all mobile browsers)
+function createImageThumbnail(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas')
+          const MAX = 400
+          let w = img.width, h = img.height
+          if (w > h) { h = Math.round((h / w) * MAX); w = MAX }
+          else { w = Math.round((w / h) * MAX); h = MAX }
+          canvas.width = w
+          canvas.height = h
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+          resolve(canvas.toDataURL('image/jpeg', 0.7))
+        } catch {
+          resolve(reader.result)
+        }
+      }
+      img.onerror = () => resolve(reader.result)
+      img.src = reader.result
+    }
+    reader.onerror = () => resolve('')
+    reader.readAsDataURL(file)
+  })
+}
+
+function createVideoThumbnail(file) {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.preload = 'auto'
+    video.muted = true
+    video.playsInline = true
+    const url = URL.createObjectURL(file)
+    let resolved = false
+    const done = (dataUrl) => {
+      if (resolved) return
+      resolved = true
+      URL.revokeObjectURL(url)
+      resolve(dataUrl)
+    }
+    video.onloadeddata = () => {
+      video.currentTime = Math.min(0.5, video.duration / 2)
+    }
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        const MAX = 400
+        let w = video.videoWidth || 300, h = video.videoHeight || 300
+        if (w > h) { h = Math.round((h / w) * MAX); w = MAX }
+        else { w = Math.round((w / h) * MAX); h = MAX }
+        canvas.width = w
+        canvas.height = h
+        canvas.getContext('2d').drawImage(video, 0, 0, w, h)
+        done(canvas.toDataURL('image/jpeg', 0.7))
+      } catch { done('') }
+    }
+    video.onerror = () => done('')
+    setTimeout(() => done(''), 5000)
+    video.src = url
+  })
+}
+
 export default function PhotoUpload() {
   const photos = useStore((s) => s.photos)
   const addMedia = useStore((s) => s.addMedia)
@@ -54,9 +119,11 @@ export default function PhotoUpload() {
             setWarning(`"${file.name}" 영상이 60초를 초과합니다 (${formatDuration(duration)}).`)
             continue
           }
-          items.push({ file, type: 'video', duration })
+          const preview = await createVideoThumbnail(file)
+          items.push({ file, type: 'video', duration, preview })
         } else if (file.type.startsWith('image/')) {
-          items.push({ file, type: 'image' })
+          const preview = await createImageThumbnail(file)
+          items.push({ file, type: 'image', preview })
         }
       }
 

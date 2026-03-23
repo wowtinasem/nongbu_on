@@ -164,11 +164,11 @@ const useStore = create((set, get) => ({
 
   addMedia: (items) =>
     set((state) => {
-      // items: [{ file, type, duration? }]
+      // items: [{ file, type, duration?, preview? }]
       const newItems = items.slice(0, 10 - state.photos.length).map((item) => ({
         id: generateId(),
         file: item.file,
-        preview: URL.createObjectURL(item.file),
+        preview: item.preview || URL.createObjectURL(item.file),
         type: item.type, // 'image' or 'video'
         duration: item.duration || 0,
       }))
@@ -417,10 +417,11 @@ const useStore = create((set, get) => ({
       }
 
       // 2. Preload ALL media in upload order (no reordering)
-      //    On mobile, blob URLs can expire — re-create them from files as fallback
+      //    Always create fresh blob URLs from file objects for full resolution
       const loaded = []
       for (let mi = 0; mi < photos.length; mi++) {
         const item = photos[mi]
+        const src = URL.createObjectURL(item.file)
         if (item.type === 'video') {
           const el = document.createElement('video')
           el.muted = true
@@ -428,39 +429,22 @@ const useStore = create((set, get) => ({
           el.preload = 'auto'
           el.setAttribute('playsinline', '')
           el.setAttribute('webkit-playsinline', '')
-          // Try blob URL first, then re-create from file
-          let videoLoaded = false
-          for (const src of [item.preview, URL.createObjectURL(item.file)]) {
-            try {
-              el.src = src
-              await new Promise((ok, fail) => {
-                el.onloadeddata = ok
-                el.onerror = () => fail(new Error(`동영상 ${mi + 1}번 로딩 실패`))
-                setTimeout(() => fail(new Error(`동영상 ${mi + 1}번 로딩 시간 초과`)), 10000)
-              })
-              videoLoaded = true
-              break
-            } catch { /* try next src */ }
-          }
-          if (!videoLoaded) throw new Error(`동영상 ${mi + 1}번을 불러올 수 없습니다`)
+          el.src = src
+          await new Promise((ok, fail) => {
+            el.onloadeddata = ok
+            el.onerror = () => fail(new Error(`동영상 ${mi + 1}번 로딩 실패`))
+            setTimeout(() => fail(new Error(`동영상 ${mi + 1}번 로딩 시간 초과`)), 15000)
+          })
           const mediaDur = item.trimDuration > 0 ? item.trimDuration : el.duration
           loaded.push({ type: 'video', element: el, mediaDur })
         } else {
           const img = new Image()
-          let imgLoaded = false
-          for (const src of [item.preview, URL.createObjectURL(item.file)]) {
-            try {
-              img.src = src
-              await new Promise((ok, fail) => {
-                img.onload = ok
-                img.onerror = () => fail(new Error(`사진 ${mi + 1}번 로딩 실패`))
-                setTimeout(() => fail(new Error(`사진 ${mi + 1}번 로딩 시간 초과`)), 10000)
-              })
-              imgLoaded = true
-              break
-            } catch { /* try next src */ }
-          }
-          if (!imgLoaded) throw new Error(`사진 ${mi + 1}번을 불러올 수 없습니다`)
+          img.src = src
+          await new Promise((ok, fail) => {
+            img.onload = ok
+            img.onerror = () => fail(new Error(`사진 ${mi + 1}번 로딩 실패`))
+            setTimeout(() => fail(new Error(`사진 ${mi + 1}번 로딩 시간 초과`)), 15000)
+          })
           loaded.push({ type: 'image', element: img, mediaDur: 0 })
         }
       }
