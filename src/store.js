@@ -718,6 +718,8 @@ const useStore = create((set, get) => ({
       }
 
       // 7. Recorder setup
+      const FPS = 24
+      const FRAME_MS = 1000 / FPS
       const captureStream = canvas.captureStream || canvas.mozCaptureStream
       if (!captureStream) throw new Error('이 브라우저에서는 영상 녹화가 지원되지 않습니다. Chrome 또는 Safari를 사용해주세요.')
       const stream = new MediaStream([
@@ -761,8 +763,6 @@ const useStore = create((set, get) => ({
 
       // 9. Render loop — use setTimeout for reliable mobile timing
       //    (requestAnimationFrame can be throttled/paused on mobile)
-      const FPS = 24
-      const FRAME_MS = 1000 / FPS
       await new Promise((resolve) => {
         function render() {
           const now = (performance.now() - audioStartTime) / 1000
