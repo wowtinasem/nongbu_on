@@ -749,20 +749,26 @@ const useStore = create((set, get) => ({
 
       // 8. Start: recorder first, then audio after brief delay
       rec.start(1000)
+      // Reset all videos to beginning (play is managed per-segment to avoid stutter)
       for (const s of segments) {
-        if (s.type === 'video') s.element.currentTime = 0
+        if (s.type === 'video') { s.element.pause(); s.element.currentTime = 0 }
       }
       await new Promise((r) => setTimeout(r, 100))
       const audioStartTime = performance.now()
       src.start()
       if (bgmSrc) bgmSrc.start()
-      for (const s of segments) {
-        if (s.type === 'video') s.element.play().catch(() => {})
+      // Only start the first segment's video
+      if (segments[0].type === 'video') {
+        segments[0].element.play().catch(() => {})
       }
       console.log('[영상] 녹화 시작')
 
       // 9. Render loop — use setTimeout for reliable mobile timing
       //    (requestAnimationFrame can be throttled/paused on mobile)
+      //    Videos are managed per-segment: play on enter, pause on leave
+      let activeSegIdx = 0
+      let fadePreStarted = false
+
       await new Promise((resolve) => {
         function render() {
           const now = (performance.now() - audioStartTime) / 1000
@@ -776,16 +782,24 @@ const useStore = create((set, get) => ({
           }
           if (idx === -1) idx = segments.length - 1
 
+          // Handle segment transition — manage video play/pause
+          if (idx !== activeSegIdx) {
+            // Pause previous segment's video
+            if (segments[activeSegIdx].type === 'video') {
+              segments[activeSegIdx].element.pause()
+            }
+            // Start new segment's video (skip if already playing from crossfade pre-start)
+            if (segments[idx].type === 'video' && segments[idx].element.paused) {
+              segments[idx].element.currentTime = 0
+              segments[idx].element.play().catch(() => {})
+            }
+            activeSegIdx = idx
+            fadePreStarted = false
+          }
+
           const seg = segments[idx]
           const segDur = seg.end - seg.start
           const tInSeg = t - seg.start
-
-          // Sync video playback
-          if (seg.type === 'video') {
-            if (Math.abs(seg.element.currentTime - tInSeg) > 0.3) {
-              seg.element.currentTime = tInSeg
-            }
-          }
 
           // === RENDER: always black bg first, then layers ===
           ctx.globalAlpha = 1
@@ -799,24 +813,19 @@ const useStore = create((set, get) => ({
             ctx.globalAlpha = 1
             drawContain(seg.element, segProgress)
           } else {
-            // Determine if we're in a fade zone
             // Fade-out zone: last FADE seconds of current segment (except last segment)
             const inFadeOut = idx < segments.length - 1 && tInSeg > segDur - FADE
-            // Fade-in zone: first FADE seconds of current segment (except first segment)
-            // We only handle fade from the "outgoing" segment's perspective
-            // to avoid double-rendering the same transition
 
             if (inFadeOut) {
               const next = segments[idx + 1]
               const raw = (tInSeg - (segDur - FADE)) / FADE
               const p = easeInOut(Math.max(0, Math.min(raw, 1)))
 
-              // Pre-seek next video
-              if (next.type === 'video') {
-                const nextT = raw * FADE
-                if (Math.abs(next.element.currentTime - nextT) > 0.2) {
-                  next.element.currentTime = nextT
-                }
+              // Pre-start next video once when entering fade zone
+              if (!fadePreStarted && next.type === 'video') {
+                next.element.currentTime = 0
+                next.element.play().catch(() => {})
+                fadePreStarted = true
               }
 
               // Draw outgoing (fading out)
