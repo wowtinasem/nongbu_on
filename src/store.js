@@ -41,6 +41,11 @@ function createWavHeader(pcmLength) {
   return buffer
 }
 
+function generateId() {
+  if (crypto.randomUUID) return crypto.randomUUID()
+  return 'xxxx-xxxx-xxxx'.replace(/x/g, () => Math.floor(Math.random() * 16).toString(16))
+}
+
 function pcmBase64ToWavBlob(base64) {
   const pcmBuffer = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
   const wavHeader = createWavHeader(pcmBuffer.length)
@@ -161,7 +166,7 @@ const useStore = create((set, get) => ({
     set((state) => {
       // items: [{ file, type, duration? }]
       const newItems = items.slice(0, 10 - state.photos.length).map((item) => ({
-        id: crypto.randomUUID(),
+        id: generateId(),
         file: item.file,
         preview: URL.createObjectURL(item.file),
         type: item.type, // 'image' or 'video'

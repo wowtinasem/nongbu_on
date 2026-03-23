@@ -36,30 +36,35 @@ export default function PhotoUpload() {
 
   const handleFiles = async (fileList) => {
     setWarning('')
-    const files = Array.from(fileList)
-    const items = []
+    try {
+      const files = Array.from(fileList)
+      const items = []
 
-    for (const file of files) {
-      if (photos.length + items.length >= 10) break
+      for (const file of files) {
+        if (photos.length + items.length >= 10) break
 
-      if (file.type.startsWith('video/')) {
-        // Video validation
-        if (file.size > MAX_VIDEO_SIZE) {
-          setWarning(`"${file.name}" 파일 크기가 100MB를 초과합니다.`)
-          continue
+        if (file.type.startsWith('video/')) {
+          // Video validation
+          if (file.size > MAX_VIDEO_SIZE) {
+            setWarning(`"${file.name}" 파일 크기가 100MB를 초과합니다.`)
+            continue
+          }
+          const duration = await getVideoDuration(file)
+          if (duration > MAX_VIDEO_DURATION) {
+            setWarning(`"${file.name}" 영상이 60초를 초과합니다 (${formatDuration(duration)}).`)
+            continue
+          }
+          items.push({ file, type: 'video', duration })
+        } else if (file.type.startsWith('image/')) {
+          items.push({ file, type: 'image' })
         }
-        const duration = await getVideoDuration(file)
-        if (duration > MAX_VIDEO_DURATION) {
-          setWarning(`"${file.name}" 영상이 60초를 초과합니다 (${formatDuration(duration)}).`)
-          continue
-        }
-        items.push({ file, type: 'video', duration })
-      } else if (file.type.startsWith('image/')) {
-        items.push({ file, type: 'image' })
       }
-    }
 
-    if (items.length) addMedia(items)
+      if (items.length) addMedia(items)
+    } catch (err) {
+      console.error('[업로드] 파일 처리 실패:', err)
+      setWarning(`파일 처리 중 오류가 발생했습니다: ${err?.message || String(err)}`)
+    }
   }
 
   const onInputChange = (e) => {
