@@ -721,7 +721,7 @@ const useStore = create((set, get) => ({
       const captureStream = canvas.captureStream || canvas.mozCaptureStream
       if (!captureStream) throw new Error('이 브라우저에서는 영상 녹화가 지원되지 않습니다. Chrome 또는 Safari를 사용해주세요.')
       const stream = new MediaStream([
-        ...captureStream.call(canvas, 30).getVideoTracks(),
+        ...captureStream.call(canvas, FPS).getVideoTracks(),
         ...audioDest.stream.getAudioTracks(),
       ])
       // Try MP4 first (Chrome 130+), then fallback to WebM
@@ -746,7 +746,7 @@ const useStore = create((set, get) => ({
       })
 
       // 8. Start: recorder first, then audio after brief delay
-      rec.start(100)
+      rec.start(1000)
       for (const s of segments) {
         if (s.type === 'video') s.element.currentTime = 0
       }
@@ -759,7 +759,10 @@ const useStore = create((set, get) => ({
       }
       console.log('[영상] 녹화 시작')
 
-      // 9. Render loop — sequential cross-fade, no flicker
+      // 9. Render loop — use setTimeout for reliable mobile timing
+      //    (requestAnimationFrame can be throttled/paused on mobile)
+      const FPS = 24
+      const FRAME_MS = 1000 / FPS
       await new Promise((resolve) => {
         function render() {
           const now = (performance.now() - audioStartTime) / 1000
@@ -836,9 +839,9 @@ const useStore = create((set, get) => ({
           // Draw subtitle overlay
           drawSubtitle(t)
 
-          requestAnimationFrame(render)
+          setTimeout(render, FRAME_MS)
         }
-        requestAnimationFrame(render)
+        setTimeout(render, FRAME_MS)
       })
 
       // 10. Cleanup
