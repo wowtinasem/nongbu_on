@@ -1,9 +1,29 @@
 import { useRef, useState } from 'react'
 import { FiX, FiArrowRight, FiArrowLeft, FiPlus, FiAlertCircle, FiScissors } from 'react-icons/fi'
+import heic2any from 'heic2any'
 import useStore from '../store'
 
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024 // 100MB
 const MAX_VIDEO_DURATION = 60 // seconds
+
+function isHeic(file) {
+  const type = (file.type || '').toLowerCase()
+  if (type === 'image/heic' || type === 'image/heif') return true
+  const name = (file.name || '').toLowerCase()
+  return name.endsWith('.heic') || name.endsWith('.heif')
+}
+
+async function convertHeicToJpeg(file) {
+  try {
+    const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 })
+    // heic2any can return an array of blobs for multi-frame HEIC
+    const result = Array.isArray(blob) ? blob[0] : blob
+    return new File([result], file.name.replace(/\.hei[cf]$/i, '.jpg'), { type: 'image/jpeg' })
+  } catch (e) {
+    console.warn('[HEIC] 변환 실패:', e)
+    return null
+  }
+}
 
 function formatDuration(sec) {
   const m = Math.floor(sec / 60)
@@ -169,26 +189,37 @@ export default function PhotoUpload() {
       for (const file of files) {
         if (photos.length + items.length >= 10) break
 
-        if (file.type.startsWith('video/')) {
+        // Convert HEIC/HEIF to JPEG first
+        let processedFile = file
+        if (isHeic(file)) {
+          const converted = await convertHeicToJpeg(file)
+          if (!converted) {
+            setWarning(`"${file.name}" HEIC 형식 변환에 실패했습니다. JPG로 변환 후 다시 시도해주세요.`)
+            continue
+          }
+          processedFile = converted
+        }
+
+        if (processedFile.type.startsWith('video/')) {
           // Video validation
-          if (file.size > MAX_VIDEO_SIZE) {
+          if (processedFile.size > MAX_VIDEO_SIZE) {
             setWarning(`"${file.name}" 파일 크기가 100MB를 초과합니다.`)
             continue
           }
-          const duration = await getVideoDuration(file)
+          const duration = await getVideoDuration(processedFile)
           if (duration > MAX_VIDEO_DURATION) {
             setWarning(`"${file.name}" 영상이 60초를 초과합니다 (${formatDuration(duration)}).`)
             continue
           }
-          const preview = await createVideoThumbnail(file)
+          const preview = await createVideoThumbnail(processedFile)
           // Read file data into memory immediately — mobile browsers can
           // invalidate the File reference (lazy disk pointer) across steps
-          const buf = await file.arrayBuffer()
-          const blob = new Blob([buf], { type: file.type || 'video/mp4' })
+          const buf = await processedFile.arrayBuffer()
+          const blob = new Blob([buf], { type: processedFile.type || 'video/mp4' })
           items.push({ file: blob, type: 'video', duration, preview })
-        } else if (file.type.startsWith('image/')) {
+        } else if (processedFile.type.startsWith('image/')) {
           // Compress large camera photos (10MB → ~200KB) via canvas
-          const { preview, blob } = await processImage(file)
+          const { preview, blob } = await processImage(processedFile)
           items.push({ file: blob, type: 'image', preview })
         }
       }
@@ -255,7 +286,7 @@ export default function PhotoUpload() {
           <input
             ref={fileRef}
             type="file"
-            accept="image/*,video/*"
+            accept="image/*,video/*,.heic,.heif"
             multiple
             onChange={onInputChange}
             className="hidden"
