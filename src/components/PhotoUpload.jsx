@@ -25,9 +25,8 @@ function getVideoDuration(file) {
 }
 
 // Process image: create thumbnail + compress for video
-// Uses createImageBitmap (off-thread, memory-efficient) for large camera photos
+// Handles all phone models: high-MP cameras, HEIC, low RAM devices
 async function processImage(file) {
-  // Draw source to thumbnail + compressed canvas
   function draw(source, w, h) {
     return new Promise((resolve) => {
       try {
@@ -53,18 +52,32 @@ async function processImage(file) {
         vc.getContext('2d').drawImage(source, 0, 0, vw, vh)
         vc.toBlob(
           (b) => resolve({ preview, blob: b || file }),
-          'image/jpeg', 0.9
+          'image/jpeg', 0.85
         )
       } catch { resolve({ preview: '', blob: file }) }
     })
   }
 
-  // Method 1: createImageBitmap (best for large camera photos — decodes off main thread)
+  // Method 1: createImageBitmap with resizeWidth (most memory-efficient)
+  //   Decodes + resizes in one step — never allocates full-resolution pixels
   if (typeof createImageBitmap !== 'undefined') {
+    // Try progressively smaller sizes if device runs out of memory
+    for (const maxPx of [1920, 1280, 800]) {
+      try {
+        const bm = await createImageBitmap(file, {
+          resizeWidth: maxPx,
+          resizeQuality: 'high',
+        })
+        const result = await draw(bm, bm.width, bm.height)
+        bm.close()
+        return result
+      } catch { /* try smaller */ }
+    }
+    // Last resort: decode without resize options (some browsers don't support them)
     try {
       const bm = await createImageBitmap(file)
       const result = await draw(bm, bm.width, bm.height)
-      bm.close() // free decoded memory immediately
+      bm.close()
       return result
     } catch (e) { console.warn('[이미지] createImageBitmap 실패:', e) }
   }
@@ -92,7 +105,12 @@ async function processImage(file) {
     })
   } catch { /* fall through */ }
 
-  // Method 3: return original file as-is (preview won't show but video generation can still try)
+  // Method 3: read raw bytes as final fallback (no preview but video gen can try)
+  try {
+    const buf = await file.arrayBuffer()
+    return { preview: '', blob: new Blob([buf], { type: file.type || 'image/jpeg' }) }
+  } catch { /* fall through */ }
+
   return { preview: '', blob: file }
 }
 
