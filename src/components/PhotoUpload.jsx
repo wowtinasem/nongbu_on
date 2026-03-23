@@ -120,10 +120,16 @@ export default function PhotoUpload() {
             continue
           }
           const preview = await createVideoThumbnail(file)
-          items.push({ file, type: 'video', duration, preview })
+          // Read file data into memory immediately — mobile browsers can
+          // invalidate the File reference (lazy disk pointer) across steps
+          const buf = await file.arrayBuffer()
+          const blob = new Blob([buf], { type: file.type || 'video/mp4' })
+          items.push({ file: blob, type: 'video', duration, preview })
         } else if (file.type.startsWith('image/')) {
           const preview = await createImageThumbnail(file)
-          items.push({ file, type: 'image', preview })
+          const buf = await file.arrayBuffer()
+          const blob = new Blob([buf], { type: file.type || 'image/jpeg' })
+          items.push({ file: blob, type: 'image', preview })
         }
       }
 
