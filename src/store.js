@@ -421,24 +421,29 @@ const useStore = create((set, get) => ({
     }
   },
 
-  generateVideo: async (bgmUrl = null, bgmVolume = 0.2, subtitleText = null, photoEffect = 'kenburns', subtitlePos = 'upper', subtitleColor = 'default') => {
+  generateVideo: async (bgmUrl = null, bgmVolume = 0.2, subtitleText = null, photoEffect = 'kenburns', subtitlePos = 'upper', subtitleColor = 'default', audioMode = 'A', originalVolume = 1.0, titleText = null) => {
     const { photos, audioUrl, narration: fullNarration } = get()
     set({ isGeneratingVideo: true, videoUrl: null })
     try {
-      console.log('[영상] 영상 생성 시작 - 파일:', photos.length, '개, BGM:', bgmUrl ? '있음' : '없음', '음량:', bgmVolume, '자막:', subtitleText ? '있음' : '없음')
+      console.log('[영상] 영상 생성 시작 - 모드:', audioMode, '파일:', photos.length, '개, BGM:', bgmUrl ? '있음' : '없음')
 
-      // 1. Decode narration audio
-      const audioBlob = await (await fetch(audioUrl)).blob()
       const AudioCtx = window.AudioContext || window.webkitAudioContext
       const audioCtx = new AudioCtx()
-      const audioBuffer = await audioCtx.decodeAudioData(await audioBlob.arrayBuffer())
-      const totalDur = audioBuffer.duration
-      console.log('[영상] 오디오 길이:', totalDur.toFixed(1), '초')
+
+      // 1. Decode narration audio (Mode A only)
+      let totalDur = 0
+      let audioBuffer = null
+      if (audioMode === 'A') {
+        const audioBlob = await (await fetch(audioUrl)).blob()
+        audioBuffer = await audioCtx.decodeAudioData(await audioBlob.arrayBuffer())
+        totalDur = audioBuffer.duration
+        console.log('[영상] 나레이션 오디오 길이:', totalDur.toFixed(1), '초')
+      }
 
       // 1.5. Parse (사진전환) markers to determine transition timings
       //   Calculate marker positions as character ratios in clean text → map to audio time
       let transitionTimes = [] // seconds where photo transitions happen
-      if (fullNarration && fullNarration.includes('(사진전환)')) {
+      if (audioMode === 'A' && fullNarration && fullNarration.includes('(사진전환)')) {
         const parts = fullNarration.split('(사진전환)')
         const cleanTotal = fullNarration.replace(/\(사진전환\)/g, '').length
         if (cleanTotal > 0 && parts.length > 1) {
@@ -460,7 +465,7 @@ const useStore = create((set, get) => ({
         const src = URL.createObjectURL(item.file)
         if (item.type === 'video') {
           const el = document.createElement('video')
-          el.muted = true
+          el.muted = (audioMode === 'A')
           el.playsInline = true
           el.preload = 'auto'
           el.setAttribute('playsinline', '')
@@ -487,13 +492,32 @@ const useStore = create((set, get) => ({
       if (loaded.length === 0) throw new Error('표시할 미디어가 없습니다')
       console.log('[영상] 미디어 프리로드 완료:', loaded.length, '개')
 
+      // Calculate totalDur for Mode B/C (based on media durations)
+      if (audioMode !== 'A') {
+        const PER_IMAGE = 4
+        for (const m of loaded) {
+          totalDur += m.type === 'video' ? m.mediaDur : PER_IMAGE
+        }
+        console.log('[영상] 미디어 기반 총 길이:', totalDur.toFixed(1), '초')
+      }
+
       // 3. Build timeline segments
       const FADE = 0.5
       const MIN_SHOW = 2
       const segments = [] // { type, element, start, end }
       let cursor = 0
 
-      if (transitionTimes.length > 0 && transitionTimes.length >= loaded.length - 1) {
+      if (audioMode !== 'A') {
+        // Mode B/C: sequential timeline based on actual media durations
+        const PER_IMAGE = 4
+        for (const m of loaded) {
+          const dur = m.type === 'video' ? m.mediaDur : PER_IMAGE
+          if (dur <= 0) continue
+          segments.push({ type: m.type, element: m.element, start: cursor, end: cursor + dur })
+          cursor += dur
+        }
+        console.log('[영상] 순차 타임라인 생성')
+      } else if (transitionTimes.length > 0 && transitionTimes.length >= loaded.length - 1) {
         // Use (사진전환) marker timings
         const boundaries = [0, ...transitionTimes, totalDur]
         for (let i = 0; i < loaded.length && i < boundaries.length - 1; i++) {
@@ -724,20 +748,40 @@ const useStore = create((set, get) => ({
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       drawContain(segments[0].element, 0)
 
-      // 6. Audio routing: narration + optional BGM mixed together
+      // 6. Audio routing
       const audioDest = audioCtx.createMediaStreamDestination()
+      let src = null // narration source (Mode A only)
+      let bgmSrc = null
 
-      // Narration source
-      const narrationGain = audioCtx.createGain()
-      narrationGain.gain.setValueAtTime(1, audioCtx.currentTime)
-      narrationGain.connect(audioDest)
-      narrationGain.connect(audioCtx.destination)
-      const src = audioCtx.createBufferSource()
-      src.buffer = audioBuffer
-      src.connect(narrationGain)
+      if (audioMode === 'A') {
+        // Mode A: narration audio
+        const narrationGain = audioCtx.createGain()
+        narrationGain.gain.setValueAtTime(1, audioCtx.currentTime)
+        narrationGain.connect(audioDest)
+        narrationGain.connect(audioCtx.destination)
+        src = audioCtx.createBufferSource()
+        src.buffer = audioBuffer
+        src.connect(narrationGain)
+      } else {
+        // Mode B/C: capture video natural audio
+        for (const m of loaded) {
+          if (m.type === 'video') {
+            try {
+              const source = audioCtx.createMediaElementSource(m.element)
+              const gain = audioCtx.createGain()
+              gain.gain.value = originalVolume
+              source.connect(gain)
+              gain.connect(audioDest)
+              gain.connect(audioCtx.destination)
+            } catch (e) {
+              console.warn('[영상] 비디오 오디오 캡처 실패:', e)
+            }
+          }
+        }
+        console.log('[영상] 자연음 모드 - 원본 음량:', Math.round(originalVolume * 100) + '%')
+      }
 
       // BGM source (if uploaded)
-      let bgmSrc = null
       if (bgmUrl) {
         const bgmBuffer = await loadMusicBuffer(bgmUrl, audioCtx)
         if (bgmBuffer) {
@@ -791,7 +835,7 @@ const useStore = create((set, get) => ({
       }
       await new Promise((r) => setTimeout(r, 100))
       const audioStartTime = performance.now()
-      src.start()
+      if (src) src.start()
       if (bgmSrc) bgmSrc.start()
       // Only start the first segment's video
       if (segments[0].type === 'video') {
@@ -884,6 +928,19 @@ const useStore = create((set, get) => ({
           // Draw subtitle overlay
           drawSubtitle(t)
 
+          // Draw title subtitle (상황 설명) — Mode B/C
+          if (titleText) {
+            ctx.save()
+            ctx.font = 'bold 32px "Noto Sans KR", sans-serif'
+            ctx.textAlign = 'left'
+            ctx.fillStyle = 'rgba(0,0,0,0.5)'
+            ctx.fillRect(0, 80, canvas.width, 56)
+            ctx.fillStyle = '#FFFFFF'
+            ctx.textBaseline = 'middle'
+            ctx.fillText('  ' + titleText, 20, 108)
+            ctx.restore()
+          }
+
           setTimeout(render, FRAME_MS)
         }
         setTimeout(render, FRAME_MS)
@@ -891,7 +948,7 @@ const useStore = create((set, get) => ({
 
       // 10. Cleanup
       rec.stop()
-      src.stop()
+      if (src) src.stop()
       if (bgmSrc) try { bgmSrc.stop() } catch {}
       for (const s of segments) {
         if (s.type === 'video') { s.element.pause(); s.element.src = '' }
