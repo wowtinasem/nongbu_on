@@ -24,32 +24,63 @@ function getVideoDuration(file) {
   })
 }
 
-// Generate small JPEG thumbnail data URL (reliable on all mobile browsers)
-function createImageThumbnail(file) {
+// Process image: create thumbnail + compress for video in one pass
+// Handles large camera photos (10MB+) by resizing via canvas → small JPEG Blob
+function processImage(file) {
   return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const img = new Image()
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas')
-          const MAX = 400
-          let w = img.width, h = img.height
-          if (w > h) { h = Math.round((h / w) * MAX); w = MAX }
-          else { w = Math.round((w / h) * MAX); h = MAX }
-          canvas.width = w
-          canvas.height = h
-          canvas.getContext('2d').drawImage(img, 0, 0, w, h)
-          resolve(canvas.toDataURL('image/jpeg', 0.7))
-        } catch {
-          resolve(reader.result)
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+
+    function makeResult(sourceImg) {
+      try {
+        // 1. Thumbnail for preview (400px)
+        const tc = document.createElement('canvas')
+        const THUMB = 400
+        let tw = sourceImg.width, th = sourceImg.height
+        if (tw > th) { th = Math.round((th / tw) * THUMB); tw = THUMB }
+        else { tw = Math.round((tw / th) * THUMB); th = THUMB }
+        tc.width = tw; tc.height = th
+        tc.getContext('2d').drawImage(sourceImg, 0, 0, tw, th)
+        const preview = tc.toDataURL('image/jpeg', 0.7)
+
+        // 2. Compressed version for video (max 1920px longest side)
+        const vc = document.createElement('canvas')
+        let vw = sourceImg.width, vh = sourceImg.height
+        const maxDim = 1920
+        if (Math.max(vw, vh) > maxDim) {
+          const scale = maxDim / Math.max(vw, vh)
+          vw = Math.round(vw * scale)
+          vh = Math.round(vh * scale)
         }
+        vc.width = vw; vc.height = vh
+        vc.getContext('2d').drawImage(sourceImg, 0, 0, vw, vh)
+        vc.toBlob(
+          (blob) => resolve({ preview, blob: blob || file }),
+          'image/jpeg', 0.9
+        )
+      } catch {
+        resolve({ preview: '', blob: file })
       }
-      img.onerror = () => resolve(reader.result)
-      img.src = reader.result
     }
-    reader.onerror = () => resolve('')
-    reader.readAsDataURL(file)
+
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      makeResult(img)
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      // Fallback: try FileReader (handles some edge formats)
+      const reader = new FileReader()
+      reader.onload = () => {
+        const img2 = new Image()
+        img2.onload = () => makeResult(img2)
+        img2.onerror = () => resolve({ preview: '', blob: file })
+        img2.src = reader.result
+      }
+      reader.onerror = () => resolve({ preview: '', blob: file })
+      reader.readAsDataURL(file)
+    }
+    img.src = url
   })
 }
 
@@ -126,9 +157,8 @@ export default function PhotoUpload() {
           const blob = new Blob([buf], { type: file.type || 'video/mp4' })
           items.push({ file: blob, type: 'video', duration, preview })
         } else if (file.type.startsWith('image/')) {
-          const preview = await createImageThumbnail(file)
-          const buf = await file.arrayBuffer()
-          const blob = new Blob([buf], { type: file.type || 'image/jpeg' })
+          // Compress large camera photos (10MB → ~200KB) via canvas
+          const { preview, blob } = await processImage(file)
           items.push({ file: blob, type: 'image', preview })
         }
       }
