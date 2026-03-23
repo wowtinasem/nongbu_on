@@ -24,64 +24,76 @@ function getVideoDuration(file) {
   })
 }
 
-// Process image: create thumbnail + compress for video in one pass
-// Handles large camera photos (10MB+) by resizing via canvas → small JPEG Blob
-function processImage(file) {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file)
-    const img = new Image()
-
-    function makeResult(sourceImg) {
+// Process image: create thumbnail + compress for video
+// Uses createImageBitmap (off-thread, memory-efficient) for large camera photos
+async function processImage(file) {
+  // Draw source to thumbnail + compressed canvas
+  function draw(source, w, h) {
+    return new Promise((resolve) => {
       try {
-        // 1. Thumbnail for preview (400px)
+        // Thumbnail (400px)
         const tc = document.createElement('canvas')
         const THUMB = 400
-        let tw = sourceImg.width, th = sourceImg.height
+        let tw = w, th = h
         if (tw > th) { th = Math.round((th / tw) * THUMB); tw = THUMB }
         else { tw = Math.round((tw / th) * THUMB); th = THUMB }
         tc.width = tw; tc.height = th
-        tc.getContext('2d').drawImage(sourceImg, 0, 0, tw, th)
+        tc.getContext('2d').drawImage(source, 0, 0, tw, th)
         const preview = tc.toDataURL('image/jpeg', 0.7)
 
-        // 2. Compressed version for video (max 1920px longest side)
+        // Compressed for video (max 1920px)
         const vc = document.createElement('canvas')
-        let vw = sourceImg.width, vh = sourceImg.height
+        let vw = w, vh = h
         const maxDim = 1920
         if (Math.max(vw, vh) > maxDim) {
-          const scale = maxDim / Math.max(vw, vh)
-          vw = Math.round(vw * scale)
-          vh = Math.round(vh * scale)
+          const s = maxDim / Math.max(vw, vh)
+          vw = Math.round(vw * s); vh = Math.round(vh * s)
         }
         vc.width = vw; vc.height = vh
-        vc.getContext('2d').drawImage(sourceImg, 0, 0, vw, vh)
+        vc.getContext('2d').drawImage(source, 0, 0, vw, vh)
         vc.toBlob(
-          (blob) => resolve({ preview, blob: blob || file }),
+          (b) => resolve({ preview, blob: b || file }),
           'image/jpeg', 0.9
         )
-      } catch {
+      } catch { resolve({ preview: '', blob: file }) }
+    })
+  }
+
+  // Method 1: createImageBitmap (best for large camera photos — decodes off main thread)
+  if (typeof createImageBitmap !== 'undefined') {
+    try {
+      const bm = await createImageBitmap(file)
+      const result = await draw(bm, bm.width, bm.height)
+      bm.close() // free decoded memory immediately
+      return result
+    } catch (e) { console.warn('[이미지] createImageBitmap 실패:', e) }
+  }
+
+  // Method 2: Image element + blob URL
+  try {
+    return await new Promise((resolve) => {
+      const url = URL.createObjectURL(file)
+      const img = new Image()
+      const timer = setTimeout(() => {
+        URL.revokeObjectURL(url)
+        resolve({ preview: '', blob: file })
+      }, 15000)
+      img.onload = () => {
+        clearTimeout(timer)
+        URL.revokeObjectURL(url)
+        draw(img, img.width, img.height).then(resolve)
+      }
+      img.onerror = () => {
+        clearTimeout(timer)
+        URL.revokeObjectURL(url)
         resolve({ preview: '', blob: file })
       }
-    }
+      img.src = url
+    })
+  } catch { /* fall through */ }
 
-    img.onload = () => {
-      URL.revokeObjectURL(url)
-      makeResult(img)
-    }
-    img.onerror = () => {
-      URL.revokeObjectURL(url)
-      // Fallback: try FileReader (handles some edge formats)
-      const reader = new FileReader()
-      reader.onload = () => {
-        const img2 = new Image()
-        img2.onload = () => makeResult(img2)
-        img2.onerror = () => resolve({ preview: '', blob: file })
-        img2.src = reader.result
-      }
-      reader.onerror = () => resolve({ preview: '', blob: file })
-      reader.readAsDataURL(file)
-    }
-    img.src = url
-  })
+  // Method 3: return original file as-is (preview won't show but video generation can still try)
+  return { preview: '', blob: file }
 }
 
 function createVideoThumbnail(file) {
