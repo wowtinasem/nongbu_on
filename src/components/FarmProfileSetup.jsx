@@ -39,6 +39,7 @@ export default function FarmProfileSetup() {
   const [province, setProvince] = useState('')
   const [city, setCity] = useState('')
   const [town, setTown] = useState('')
+  const [guideline, setGuideline] = useState('')
   const [error, setError] = useState('')
 
   // Pre-fill from existing profile
@@ -46,6 +47,7 @@ export default function FarmProfileSetup() {
     if (farmProfile) {
       setFarmName(farmProfile.farmName || '')
       setCrops(farmProfile.crops || '')
+      setGuideline(farmProfile.guideline || '')
       setProvince(farmProfile.region?.도 || '')
       setCity(farmProfile.region?.시군구 || '')
       setTown(farmProfile.region?.읍면동 || '')
@@ -73,6 +75,7 @@ export default function FarmProfileSetup() {
     setFarmProfile({
       farmName: farmName.trim(),
       crops: crops.trim(),
+      guideline: guideline.trim(),
       region: {
         도: province,
         시군구: city,
@@ -152,6 +155,21 @@ export default function FarmProfileSetup() {
               className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-green-main focus:outline-none transition text-base"
             />
             <p className="text-xs text-gray-400 mt-1">쉼표(,)로 구분하여 여러 개 입력 가능</p>
+          </div>
+
+          {/* Farm Guideline */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              농장 소개 지침
+            </label>
+            <textarea
+              value={guideline}
+              onChange={(e) => setGuideline(e.target.value)}
+              placeholder={"예) 봄에는 딸기 수확, 여름에는 복숭아 판매, 가을에는 사과 따기 체험 운영.\n직거래 택배 가능, 전화주문 환영.\n올해는 홍로 사과가 특히 잘 됨."}
+              className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-green-main focus:outline-none transition text-base resize-none"
+              rows={4}
+            />
+            <p className="text-xs text-gray-400 mt-1">계절별 주력 작물, 판매 방식, 홍보 포인트 등을 자유롭게 작성하세요. 나레이션 생성 시 AI가 참고합니다.</p>
           </div>
 
           {/* Region - 3 levels */}

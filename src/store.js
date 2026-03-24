@@ -222,6 +222,7 @@ const useStore = create((set, get) => ({
       const profileRegion = farmProfile?.region
         ? [farmProfile.region.도, farmProfile.region.시군구, farmProfile.region.읍면동].filter(Boolean).join(' ')
         : region
+      const profileGuideline = farmProfile?.guideline || ''
 
       let prompt
       const parts = []
@@ -264,11 +265,11 @@ const useStore = create((set, get) => ({
 
 농장 이름: ${profileName}
 재배 작물: ${profileCrops}
-지역: ${profileRegion}
+지역: ${profileRegion}${profileGuideline ? `\n농장 소개 지침: ${profileGuideline}` : ''}
 사진 수: ${photos.length}장${seasonLine}
 
 추가 요구사항:
-- 사진 속 장면을 있는 그대로 담백하게 묘사해주세요${seasonContext ? '\n- 계절감과 날씨 분위기를 자연스럽게 녹여주세요' : ''}
+- 사진 속 장면을 있는 그대로 담백하게 묘사해주세요${profileGuideline ? '\n- 농장 소개 지침을 참고하여 현재 사진에 맞는 내용을 자연스럽게 반영해주세요' : ''}${seasonContext ? '\n- 계절감과 날씨 분위기를 자연스럽게 녹여주세요' : ''}
 - 사진이 바뀌는 시점에 (사진전환) 마커를 넣어주세요
 - (사진전환) 마커는 문장 사이에 넣어주세요. 예: "첫 번째 문장입니다. (사진전환) 두 번째 문장입니다."
 - 사진 수에 맞게 (사진전환) 마커를 ${Math.max(0, photos.length - 1)}개 넣어주세요
@@ -306,10 +307,10 @@ const useStore = create((set, get) => ({
 
 농장 이름: ${profileName}
 재배 작물: ${profileCrops}
-지역: ${profileRegion}
+지역: ${profileRegion}${profileGuideline ? `\n농장 소개 지침: ${profileGuideline}` : ''}
 사진 수: ${photos.length}장${seasonLine2}${userSection}
 
-추가 요구사항:${seasonContext ? '\n- 계절감과 날씨 분위기를 자연스럽게 녹여주세요' : ''}
+추가 요구사항:${profileGuideline ? '\n- 농장 소개 지침을 참고하여 현재 키워드/사진에 맞는 내용을 자연스럽게 반영해주세요' : ''}${seasonContext ? '\n- 계절감과 날씨 분위기를 자연스럽게 녹여주세요' : ''}
 - 사진이 ${photos.length}장이므로 사진이 바뀌는 시점에 (사진전환) 마커를 넣어주세요
 - (사진전환) 마커는 문장 사이에 넣어주세요. 예: "첫 번째 문장입니다. (사진전환) 두 번째 문장입니다."
 - 사진 수에 맞게 (사진전환) 마커를 ${Math.max(0, photos.length - 1)}개 넣어주세요
