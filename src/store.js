@@ -965,19 +965,8 @@ const useStore = create((set, get) => ({
             const tBoxWidth = Math.min(canvas.width - tPadding * 2, Math.max(...tLines.map(l => ctx.measureText(l).width)) + tPadding * 3)
             const tBoxX = (canvas.width - tBoxWidth) / 2
 
-            // Position just above the subtitle (with 16px gap)
-            let tBoxY
-            if (lastSubtitleBox) {
-              tBoxY = lastSubtitleBox.y - tTotalHeight - 16
-            } else {
-              // No subtitle visible — use default subtitle area as reference
-              if (subtitlePos === 'upper') {
-                tBoxY = 120 - tTotalHeight - 16
-                if (tBoxY < 20) tBoxY = 20
-              } else {
-                tBoxY = canvas.height - 280 - tTotalHeight
-              }
-            }
+            // Fixed position at top of video
+            const tBoxY = 80
 
             // Draw background box
             ctx.fillStyle = subStyle.bg
