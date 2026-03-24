@@ -668,7 +668,10 @@ const useStore = create((set, get) => ({
       }
       const subStyle = SUB_COLORS[subtitleColor] || SUB_COLORS.default
 
+      let lastSubtitleBox = null // track subtitle position for title placement
+
       function drawSubtitle(t) {
+        lastSubtitleBox = null
         if (subtitleCues.length === 0) return
         const cue = subtitleCues.find((c) => t >= c.start && t < c.end)
         if (!cue) return
@@ -711,6 +714,8 @@ const useStore = create((set, get) => ({
         } else {
           boxY = canvas.height - 280 - totalHeight
         }
+
+        lastSubtitleBox = { y: boxY, height: totalHeight }
 
         // Draw background box (roundRect polyfill for mobile compatibility)
         ctx.fillStyle = subStyle.bg
@@ -928,16 +933,78 @@ const useStore = create((set, get) => ({
           // Draw subtitle overlay
           drawSubtitle(t)
 
-          // Draw title subtitle (상황 설명) — Mode B/C
+          // Draw title subtitle (농장 정보/광고) — Mode B/C, just above subtitle
           if (titleText) {
+            const tFontSize = 48
+            const tPadding = 24
+
             ctx.save()
-            ctx.font = 'bold 32px "Noto Sans KR", sans-serif'
-            ctx.textAlign = 'left'
-            ctx.fillStyle = 'rgba(0,0,0,0.5)'
-            ctx.fillRect(0, 80, canvas.width, 56)
-            ctx.fillStyle = '#FFFFFF'
-            ctx.textBaseline = 'middle'
-            ctx.fillText('  ' + titleText, 20, 108)
+            ctx.globalAlpha = 1
+            ctx.font = `bold ${tFontSize}px "Noto Sans KR", sans-serif`
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'top'
+
+            // Word-wrap
+            const tMaxWidth = canvas.width - tPadding * 4
+            const tChars = titleText.split('')
+            const tLines = []
+            let tCurLine = ''
+            for (const ch of tChars) {
+              const test = tCurLine + ch
+              if (ctx.measureText(test).width > tMaxWidth && tCurLine) {
+                tLines.push(tCurLine)
+                tCurLine = ch
+              } else {
+                tCurLine = test
+              }
+            }
+            if (tCurLine) tLines.push(tCurLine)
+
+            const tLineHeight = tFontSize * 1.4
+            const tTotalHeight = tLines.length * tLineHeight + tPadding * 2
+            const tBoxWidth = Math.min(canvas.width - tPadding * 2, Math.max(...tLines.map(l => ctx.measureText(l).width)) + tPadding * 3)
+            const tBoxX = (canvas.width - tBoxWidth) / 2
+
+            // Position just above the subtitle (with 16px gap)
+            let tBoxY
+            if (lastSubtitleBox) {
+              tBoxY = lastSubtitleBox.y - tTotalHeight - 16
+            } else {
+              // No subtitle visible — use default subtitle area as reference
+              if (subtitlePos === 'upper') {
+                tBoxY = 120 - tTotalHeight - 16
+                if (tBoxY < 20) tBoxY = 20
+              } else {
+                tBoxY = canvas.height - 280 - tTotalHeight
+              }
+            }
+
+            // Draw background box
+            ctx.fillStyle = subStyle.bg
+            ctx.beginPath()
+            if (ctx.roundRect) {
+              ctx.roundRect(tBoxX, tBoxY, tBoxWidth, tTotalHeight, 16)
+            } else {
+              const r = 16
+              ctx.moveTo(tBoxX + r, tBoxY)
+              ctx.lineTo(tBoxX + tBoxWidth - r, tBoxY)
+              ctx.arcTo(tBoxX + tBoxWidth, tBoxY, tBoxX + tBoxWidth, tBoxY + r, r)
+              ctx.lineTo(tBoxX + tBoxWidth, tBoxY + tTotalHeight - r)
+              ctx.arcTo(tBoxX + tBoxWidth, tBoxY + tTotalHeight, tBoxX + tBoxWidth - r, tBoxY + tTotalHeight, r)
+              ctx.lineTo(tBoxX + r, tBoxY + tTotalHeight)
+              ctx.arcTo(tBoxX, tBoxY + tTotalHeight, tBoxX, tBoxY + tTotalHeight - r, r)
+              ctx.lineTo(tBoxX, tBoxY + r)
+              ctx.arcTo(tBoxX, tBoxY, tBoxX + r, tBoxY, r)
+              ctx.closePath()
+            }
+            ctx.fill()
+
+            // Draw text
+            for (let i = 0; i < tLines.length; i++) {
+              ctx.fillStyle = subStyle.text
+              ctx.fillText(tLines[i], canvas.width / 2, tBoxY + tPadding + i * tLineHeight)
+            }
+
             ctx.restore()
           }
 
