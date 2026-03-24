@@ -965,21 +965,18 @@ const useStore = create((set, get) => ({
             const tBoxWidth = Math.min(canvas.width - tPadding * 2, Math.max(...tLines.map(l => ctx.measureText(l).width)) + tPadding * 3)
             const tBoxX = (canvas.width - tBoxWidth) / 2
 
-            // Position just above the narration subtitle
+            // Position: always at the bottom area, above the narration subtitle
             let tBoxY
-            if (lastSubtitleBox) {
-              // Subtitle is visible — place just above it
-              tBoxY = lastSubtitleBox.y - tTotalHeight - 16
+            if (subtitlePos === 'upper') {
+              // Narration is at top → promotional goes to bottom area (no conflict)
+              tBoxY = canvas.height - 280 - tTotalHeight
             } else {
-              // Subtitle not visible — use the subtitle area as reference
-              // Estimate 2-line subtitle height for consistent positioning
-              const estSubHeight = 2 * (48 * 1.4) + 24 * 2
-              if (subtitlePos === 'upper') {
-                tBoxY = 120 - tTotalHeight - 16
-                if (tBoxY < 20) tBoxY = 20
-              } else {
-                tBoxY = canvas.height - 280 - estSubHeight - tTotalHeight - 16
-              }
+              // Narration is at bottom → promotional goes just above it
+              // Use actual subtitle box if visible, otherwise estimate
+              const subTop = lastSubtitleBox
+                ? lastSubtitleBox.y
+                : canvas.height - 280 - (2 * (48 * 1.4) + 24 * 2)
+              tBoxY = subTop - tTotalHeight - 16
             }
 
             // Draw background box
