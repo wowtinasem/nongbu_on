@@ -72,19 +72,31 @@ export default function Narration() {
     recognition.lang = 'ko-KR'
     recognition.continuous = true
     recognition.interimResults = true
+
+    // Preserve text typed before mic activation
+    const textBeforeMic = userPrompt.trimEnd()
+
     recognition.onresult = (event) => {
-      let transcript = ''
+      let finalText = ''
+      let interimText = ''
       for (let i = 0; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript
+        const t = event.results[i][0].transcript
+        if (event.results[i].isFinal) {
+          finalText += t
+        } else {
+          interimText += t
+        }
       }
-      setUserPrompt(transcript)
+      const spokenText = (finalText + interimText).trim()
+      const sep = textBeforeMic && spokenText ? ' ' : ''
+      setUserPrompt(textBeforeMic + sep + spokenText)
     }
     recognition.onend = () => setIsListening(false)
     recognition.onerror = () => setIsListening(false)
     recognitionRef.current = recognition
     recognition.start()
     setIsListening(true)
-  }, [isListening])
+  }, [isListening, userPrompt])
 
   const handleDirect = () => {
     setNarration(userPrompt.trim())
