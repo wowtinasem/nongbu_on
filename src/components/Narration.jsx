@@ -20,6 +20,7 @@ export default function Narration() {
   const [selectedWeather, setSelectedWeather] = useState([])
   const [selectedSeasons, setSelectedSeasons] = useState([])
   const recognitionRef = useRef(null)
+  const isListeningRef = useRef(false)
 
   const MONTHS = Array.from({ length: 12 }, (_, i) => ({ id: i + 1, label: `${i + 1}월` }))
   const WEATHER = [
@@ -63,40 +64,59 @@ export default function Narration() {
   }, [])
 
   const toggleListening = useCallback(() => {
-    if (isListening) {
+    if (isListeningRef.current) {
+      isListeningRef.current = false
       recognitionRef.current?.stop()
+      setIsListening(false)
       return
     }
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     const recognition = new SpeechRecognition()
     recognition.lang = 'ko-KR'
-    recognition.continuous = true
+    recognition.continuous = false
     recognition.interimResults = true
 
-    // Preserve text typed before mic activation
-    const textBeforeMic = userPrompt.trimEnd()
+    const baseText = userPrompt.trimEnd()
+    let accumulated = ''
 
     recognition.onresult = (event) => {
-      let finalText = ''
-      let interimText = ''
-      for (let i = 0; i < event.results.length; i++) {
-        const t = event.results[i][0].transcript
-        if (event.results[i].isFinal) {
-          finalText += t
-        } else {
-          interimText += t
-        }
+      const result = event.results[event.results.length - 1]
+      const transcript = result[0].transcript.trim()
+      if (result.isFinal) {
+        accumulated = accumulated ? accumulated + ' ' + transcript : transcript
       }
-      const spokenText = (finalText + interimText).trim()
-      const sep = textBeforeMic && spokenText ? ' ' : ''
-      setUserPrompt(textBeforeMic + sep + spokenText)
+      const display = result.isFinal
+        ? accumulated
+        : (accumulated ? accumulated + ' ' + transcript : transcript)
+      setUserPrompt(baseText + (baseText && display ? ' ' : '') + display)
     }
-    recognition.onend = () => setIsListening(false)
-    recognition.onerror = () => setIsListening(false)
+
+    recognition.onend = () => {
+      if (isListeningRef.current) {
+        setTimeout(() => {
+          if (isListeningRef.current) {
+            try { recognition.start() } catch {
+              isListeningRef.current = false
+              setIsListening(false)
+            }
+          }
+        }, 100)
+      } else {
+        setIsListening(false)
+      }
+    }
+
+    recognition.onerror = (e) => {
+      if (e.error === 'no-speech' || e.error === 'aborted') return
+      isListeningRef.current = false
+      setIsListening(false)
+    }
+
     recognitionRef.current = recognition
+    isListeningRef.current = true
     recognition.start()
     setIsListening(true)
-  }, [isListening, userPrompt])
+  }, [userPrompt])
 
   const handleDirect = () => {
     setNarration(userPrompt.trim())
