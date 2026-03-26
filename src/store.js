@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { loadMusicBuffer } from './bgm.js'
+import fixWebmDuration from 'fix-webm-duration'
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -8,6 +9,80 @@ function fileToBase64(file) {
     reader.onerror = reject
     reader.readAsDataURL(file)
   })
+}
+
+// Fix MP4 duration metadata (MediaRecorder produces fragmented MP4 without correct duration)
+async function fixMp4Duration(blob, durationMs) {
+  const buffer = await blob.arrayBuffer()
+  const bytes = new Uint8Array(buffer)
+  const view = new DataView(buffer)
+
+  function findAllAtoms(name) {
+    const positions = []
+    const n = [name.charCodeAt(0), name.charCodeAt(1), name.charCodeAt(2), name.charCodeAt(3)]
+    for (let i = 4; i < bytes.length - 3; i++) {
+      if (bytes[i] === n[0] && bytes[i+1] === n[1] && bytes[i+2] === n[2] && bytes[i+3] === n[3]) {
+        positions.push(i)
+      }
+    }
+    return positions
+  }
+
+  let movieTimescale = 1000
+
+  // Fix mvhd (Movie Header) — overall movie duration
+  for (const pos of findAllAtoms('mvhd')) {
+    const ver = bytes[pos + 4]
+    if (ver === 0) {
+      movieTimescale = view.getUint32(pos + 16)
+      view.setUint32(pos + 20, Math.round(durationMs * movieTimescale / 1000))
+    } else if (ver === 1) {
+      movieTimescale = view.getUint32(pos + 24)
+      const dur = Math.round(durationMs * movieTimescale / 1000)
+      view.setUint32(pos + 28, 0)
+      view.setUint32(pos + 32, dur)
+    }
+  }
+
+  // Fix tkhd (Track Header) — each track duration (uses movie timescale)
+  for (const pos of findAllAtoms('tkhd')) {
+    const ver = bytes[pos + 4]
+    const dur = Math.round(durationMs * movieTimescale / 1000)
+    if (ver === 0) {
+      view.setUint32(pos + 24, dur)
+    } else if (ver === 1) {
+      view.setUint32(pos + 32, 0)
+      view.setUint32(pos + 36, dur)
+    }
+  }
+
+  // Fix mdhd (Media Header) — each media duration (has own timescale)
+  for (const pos of findAllAtoms('mdhd')) {
+    const ver = bytes[pos + 4]
+    if (ver === 0) {
+      const ts = view.getUint32(pos + 16)
+      view.setUint32(pos + 20, Math.round(durationMs * ts / 1000))
+    } else if (ver === 1) {
+      const ts = view.getUint32(pos + 24)
+      const dur = Math.round(durationMs * ts / 1000)
+      view.setUint32(pos + 28, 0)
+      view.setUint32(pos + 32, dur)
+    }
+  }
+
+  // Fix mehd (Movie Extends Header) — fragmented MP4 overall duration
+  for (const pos of findAllAtoms('mehd')) {
+    const ver = bytes[pos + 4]
+    const dur = Math.round(durationMs * movieTimescale / 1000)
+    if (ver === 0) {
+      view.setUint32(pos + 8, dur)
+    } else if (ver === 1) {
+      view.setUint32(pos + 8, 0)
+      view.setUint32(pos + 12, dur)
+    }
+  }
+
+  return new Blob([bytes], { type: 'video/mp4' })
 }
 
 function createWavHeader(pcmLength) {
@@ -826,11 +901,25 @@ const useStore = create((set, get) => ({
       const rec = new MediaRecorder(stream, { mimeType: mime })
       const chunks = []
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+      const totalDurMs = totalDur * 1000
       const donePromise = new Promise((resolve) => {
-        rec.onstop = () => resolve({
-          url: URL.createObjectURL(new Blob(chunks, { type: blobType })),
-          format: isMp4 ? 'mp4' : 'webm'
-        })
+        rec.onstop = async () => {
+          let blob = new Blob(chunks, { type: blobType })
+          try {
+            if (isMp4) {
+              blob = await fixMp4Duration(blob, totalDurMs)
+            } else {
+              blob = await fixWebmDuration(blob, totalDurMs, { logger: false })
+            }
+            console.log('[영상] duration 메타데이터 수정 완료 (' + (totalDur).toFixed(1) + '초)')
+          } catch (e) {
+            console.warn('[영상] duration 메타데이터 수정 실패:', e)
+          }
+          resolve({
+            url: URL.createObjectURL(blob),
+            format: isMp4 ? 'mp4' : 'webm'
+          })
+        }
       })
 
       // 8. Start: recorder first, then audio after brief delay
